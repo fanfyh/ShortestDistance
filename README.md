@@ -42,7 +42,7 @@ The following folders contain:
 ├── R
 │   ├── 01_port_data_collector.py  # collect port location info
 │   ├── 02_generate_city_port_combinations.R  # generate potential combinations based on province
-│   ├── 03_combine_difference_maps.R          # !todo: combine diffenrence maps toegher
+│   ├── 03_combine_difference_maps.R          # FIXME: combine diffenrence maps toegher
 │   ├── 04_calculate_shortest_distance.R      # based by united maps    
 │   ├── funs                                  # detailed see in the folder
 │   ├── main_files

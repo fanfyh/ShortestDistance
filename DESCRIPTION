@@ -3,3 +3,16 @@ Title: Analysis Project for ShortestDistance
 Type: Project
 Version: 0.0.1
 Encoding: UTF-8
+Imports: 
+    furrr,
+    future,
+    here,
+    janitor,
+    purrr,
+    sf,
+    sfnetworks,
+    skimr,
+    tidygraph,
+    units
+Depends: 
+    tidyverse

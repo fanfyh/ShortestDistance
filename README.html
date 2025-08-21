@@ -80,15 +80,21 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 
-<p>TODO: Add more to the title of your project here</p>
 <section id="shortestdistance" class="level1">
 <h1>ShortestDistance:</h1>
-<p>TODO: Give a brief description of what your project is about</p>
-<p>This project…</p>
+<p>This project calculates the shortest distance between Chinese cities and ports using multimodal transportation networks. It integrates <em>various transportation maps</em> (railway, highway, national roads, provincial roads, and waterways) to create realistic routing networks with transfer capabilities between different transport modes. The project handles spatial data processing, city-port matching, and optimization of travel routes through combined network analysis.</p>
+<p>Key features:</p>
+<ul>
+<li><p>Assigns transportation infrastructure to administrative regions for realistic routing</p></li>
+<li><p>Implements city-based filtering to efficiently create transfer connections</p></li>
+<li><p>Combines different transportation networks into unified multimodal routing systems</p></li>
+<li><p>Calculates optimal routes considering both distance and mode-switching costs</p></li>
+<li><p>Supports parallel processing for efficient distance calculations</p></li>
+<li><p>Handles large spatial datasets with memory-efficient algorithms</p></li>
+</ul>
 </section>
 <section id="brief-description-of-folder-and-file-contents" class="level1">
 <h1>Brief description of folder and file contents</h1>
-<p>TODO: As project evolves, add brief description of what is inside the data, docs and R folders.</p>
 <p>The following folders contain:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">├├──</span> data        <span class="co"># data processed </span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── all_cities_with_distance.csv</span>
@@ -112,7 +118,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── 02_generate_city_port_combinations.R  <span class="co"># generate potential combinations based on province</span></span>
 <span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── 03_combine_difference_maps.R          <span class="co"># !todo: combine diffenrence maps toegher</span></span>
 <span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── 04_calculate_shortest_distance.R      <span class="co"># based by united maps    </span></span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── funs</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── funs                                  <span class="co"># detailed see in the folder</span></span>
 <span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── main_files</span>
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── main.html</span>
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="ex">│</span>   ├── main.qmd                              <span class="co"># </span></span>

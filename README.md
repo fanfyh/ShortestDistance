@@ -1,13 +1,23 @@
 # ShortestDistance:
 
-TODO : Give a brief description of what your project is about
+This project calculates the shortest distance between Chinese cities and ports using multimodal transportation networks. It integrates *various transportation maps* (railway, highway, national roads, provincial roads, and waterways) to create realistic routing networks with transfer capabilities between different transport modes. The project handles spatial data processing, city-port matching, and optimization of travel routes through combined network analysis.
 
-This project...
+Key features:
+
+- Assigns transportation infrastructure to administrative regions for realistic routing
+
+- Implements city-based filtering to efficiently create transfer connections
+
+- Combines different transportation networks into unified multimodal routing systems
+
+- Calculates optimal routes considering both distance and mode-switching costs
+
+- Supports parallel processing for efficient distance calculations
+
+- Handles large spatial datasets with memory-efficient algorithms
 
 # Brief description of folder and file contents
 
-TODO: As project evolves, add brief description of what is inside the
-data, docs and R folders.
 
 The following folders contain:
 
@@ -34,7 +44,7 @@ The following folders contain:
 │   ├── 02_generate_city_port_combinations.R  # generate potential combinations based on province
 │   ├── 03_combine_difference_maps.R          # !todo: combine diffenrence maps toegher
 │   ├── 04_calculate_shortest_distance.R      # based by united maps    
-│   ├── funs
+│   ├── funs                                  # detailed see in the folder
 │   ├── main_files
 │   ├── main.html
 │   ├── main.qmd                              # 

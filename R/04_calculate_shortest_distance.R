@@ -33,7 +33,6 @@ source(here("R/funs/calculate_network_distance.R"))
 
 
 
-
 # Print final result data frame
 print("Calculation complete, results are as follows:")
 print(result_df_vectorized)

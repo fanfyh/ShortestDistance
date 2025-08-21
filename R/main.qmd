@@ -3,3 +3,61 @@ title: "Untitled"
 format: html
 ---
 
+```{r check-port-data-reticulate}
+#| message: false
+#| warning: false
+
+library(reticulate)
+library(tidyverse)
+
+port_data_file <- here::here("data", "all_ports_data.csv")
+
+if (!file.exists(port_data_file)) {
+  cat("Port data file not found. Running Python script...\n")
+  
+  # Run Python script using reticulate
+  py_run_file(here::here("R", "01_port_data_collector.py"))
+  
+  if (file.exists(port_data_file)) {
+    cat("✓ Port data collection completed!\n")
+  } else {
+    stop("❌ Failed to generate port data file.")
+  }
+} else {
+  cat("✓ Port data file already exist.\n")
+}
+
+
+```
+
+
+```{r check-city-port-combinations}
+#| message: false
+#| warning: false
+
+combinations_file <- here::here("data", "city_port_combinations.Rdata")
+
+if (!file.exists(combinations_file)) {
+  cat("Combinations data file not found. Running Python script...\n")
+  
+  # Run Python script using reticulate
+  source(here::here("R", "02_generate_city_port_combinations.R"))
+  
+  if (file.exists(combinations_file)) {
+    cat("✓ Combinations data construction completed!\n")
+  } else {
+    stop("❌ Failed to generate port data file.")
+  }
+} else {
+  load(combinations_file)
+  cat("✓ Combinations data file already loaded.\n")
+}
+
+
+```
+
+
+
+```{r}
+
+```

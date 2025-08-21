@@ -110,8 +110,8 @@ def fetch_and_parse_port_data(url):
                     port_info['english_name'] = value
                 elif key == '港口代码':
                     port_info['port_code'] = value
-                elif key == '所属国家':
-                    port_info['country'] = value
+                # elif key == '所属国家':
+                #     port_info['country'] = value
                 elif key == '国家英文':
                     port_info['country_english'] = value
 

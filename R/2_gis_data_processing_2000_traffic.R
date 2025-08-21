@@ -29,296 +29,16 @@ library(janitor)
 library(skimr)
 # funs -------------------------------------------------------------------
 
+source(here("R/funs/calculate_network_distance.R"))
 
+source(here("R/funs/create_transfer_edges.R"))
 
+source(here("R/funs/assign_points_to_cities.R"))
 
+source(here("R/funs/create_bimodal_network.R"))
 
 
-# import data ------------------------------------------------------------
-
-
-## Traffic Data (2000 Railway, Highway, National Road Maps) ---------------------------------------------------
-
-
-# Set the directory path containing the Shapefile files
-# Please adjust the path according to your actual project structure
-shapefile_dir <- "data-raw/2000年道路交通图"
-
-# Define the main Shapefile file names (usually .shp files)
-# Assuming main file names are '铁路_polyline.shp', '高速_polyline.shp', '国道_polyline.shp'
-shapefile_names <- c("铁路_polyline.shp", "高速_polyline.shp", "国道_polyline.shp")
-
-# Build the full Shapefile file paths
-full_shapefile_paths <- here::here(shapefile_dir, shapefile_names)
-
-# Check if files exist
-if (!all(file.exists(full_shapefile_paths))) {
-  stop(paste("Error: One or more Shapefile files not found. Please ensure all .shp files and their accompanying files (.dbf, .shx, etc.) are located in the specified directory.", 
-             "\nMissing files:", paste(full_shapefile_paths[!file.exists(full_shapefile_paths)], collapse = ", ")))
-}
-
-# Resolve Chinese garbled characters in Shapefile: Set SHAPE_ENCODING environment variable before reading
-# For Chinese Shapefiles, common encodings are GBK or GB2312
-Sys.setenv("SHAPE_ENCODING" = "GBK") 
-
-# Read individual Shapefile files
-# st_read() automatically identifies accompanying files like .dbf, .shx in the same directory
-railway_map_2000 <- st_read(full_shapefile_paths[[1]]) |> mutate(type = "铁路")
-
-railway_map_2000_point <- railway_map_2000 |> st_cast("POINT")
-
-
-highway_map_2000 <- st_read(full_shapefile_paths[[2]]) |> mutate(type = "高速")
-
-
-nationroad_map_2000 <- st_read(full_shapefile_paths[[3]]) |> mutate(type = "国道")
-
-
-# Ensure all maps have consistent columns before combining. 
-# We'll select common columns and geometry, and let sf handle the binding.
-# Adjust column selection based on your specific needs; here, 'NAME', 'CODE', 'type', and geometry are common.
-common_cols <- c("NAME", "CODE", "type") # Assuming NAME and CODE are present or can be made consistent
-
-# Select and rename columns if necessary for each map
-# For `nationroad_map_2000`, if 'QUES' column is not needed, it will be dropped by select.
-railway_map_2000_processed <- railway_map_2000 %>% select(all_of(common_cols), geometry)
-highway_map_2000_processed <- highway_map_2000 %>% select(all_of(common_cols), geometry)
-nationroad_map_2000_processed <- nationroad_map_2000 %>% select(all_of(common_cols), geometry)
-
-
-# Combine all three traffic maps into a single sf object
-# st_crs(railway_map_2000) will be used as the CRS for the combined map.
-# It's crucial that all input layers have the same CRS or are transformed to a common one beforehand if different.
-traffic_map_2000 <- rbind(railway_map_2000_processed, highway_map_2000_processed)
-# Round coordinates of traffic_map_2000 to 5 decimal places to improve network connectivity
-# This helps in snapping slightly misaligned endpoints to common nodes
-# st_geometry(traffic_map_2000) <- st_geometry(traffic_map_2000) %>%
-#   lapply(function(x) round(x, 1)) %>% # Round to 5 decimal places (adjust as needed)
-#   st_sfc(crs = st_crs(traffic_map_2000))
-
-st_geometry(highway_map_2000_processed) <- st_geometry(highway_map_2000_processed) %>%
-  lapply(function(x) round(x, 2)) %>% # Round to 5 decimal places (adjust as needed)
-  st_sfc(crs = st_crs(highway_map_2000_processed))
-
-
-sf_network <- as_sfnetwork(traffic_map_2000, directed = FALSE) %>%
-      activate("edges") %>%
-      mutate(edge_length = st_length(geometry))
-
-# Print data overview
-print("Combined Railway Map Overview:")
-print(head(railway_map_2000))
-
-print("Combined Highway Map Overview:")
-print(head(highway_map_2000))
-
-print("Combined National Road Map Overview:")
-print(head(nationroad_map_2000))
-
-print("Combined Traffic Map (traffic_map_2000) Overview:")
-print(head(traffic_map_2000))
-
-
-# Print CRS information for the combined data
-print("CRS information for the combined traffic map (traffic_map_2000):")
-print(st_crs(traffic_map_2000))
-
-
-
-# map with second sources ------------------------------------------------
-
-# Read the new 2000 map files (with provincial roads)
-shapefile_paths_new <- here::here("data-raw/2000-map", c("hiway.shp", "rail.shp", "gd.shp", "sd.shp"))
-
-# Read all four transportation network types
-highway_map_new <- st_read(shapefile_paths_new[1]) |> mutate(type = "高速公路")
-railway_map_new <- st_read(shapefile_paths_new[2]) |> mutate(type = "铁路") 
-national_road_map <- st_read(shapefile_paths_new[3]) |> mutate(type = "国道")
-provincial_road_map <- st_read(shapefile_paths_new[4]) |> mutate(type = "省道")
-
-# Standardize column names across all datasets
-# First inspect what columns each dataset has
-print("Highway columns:", names(highway_map_new))
-print("Railway columns:", names(railway_map_new))
-print("National road columns:", names(national_road_map))
-print("Provincial road columns:", names(provincial_road_map))
-
-# Create a unified transportation network
-# Select common columns and ensure consistent structure
-unified_transport_network <- bind_rows(
-  highway_map_new |> select(type, geometry),
-  railway_map_new |> select(type, geometry),
-  national_road_map |> select(type, geometry),
-  provincial_road_map |> select(type, geometry)
-) |>
-  # Add weight/priority for different transport types
-  mutate(
-    priority = case_when(
-      type == "高速公路" ~ 1,  # Highest priority
-      type == "铁路" ~ 2,      # Second priority
-      type == "国道" ~ 3,      # Third priority
-      type == "省道" ~ 4       # Lowest priority
-    ),
-    # Add speed factors for different road types (km/h)
-    speed_factor = case_when(
-      type == "高速公路" ~ 120,
-      type == "铁路" ~ 200,
-      type == "国道" ~ 80,
-      type == "省道" ~ 60
-    )
-  )
-
-# Improve network connectivity by rounding coordinates
-st_geometry(unified_transport_network) <- st_geometry(unified_transport_network) |>
-  lapply(function(x) round(x, 3)) |>  # Round to 3 decimal places
-  st_sfc(crs = st_crs(unified_transport_network))
-
-
-# Remove empty geometries and invalid linestrings before creating network
-unified_transport_network_clean <- unified_transport_network |>
-  filter(!st_is_empty(geometry)) |>
-  st_cast("LINESTRING") |>
-  filter(st_is_valid(geometry))
-
-# Check how many rows we have after cleaning
-print(paste("Rows before cleaning:", nrow(unified_transport_network)))
-print(paste("Rows after cleaning:", nrow(unified_transport_network_clean)))
-
-
-# Create the unified sfnetwork
-unified_sf_network <- as_sfnetwork(unified_transport_network_clean, directed = FALSE) |>
-  activate("edges") |>
-  mutate(
-    # Calculate geometric length
-    edge_length = st_length(geometry),
-    # Calculate travel time based on transport type and speed
-    travel_time = as.numeric(edge_length) / (speed_factor * 1000 / 3600), # Convert to seconds
-    # Use travel time as weight for shortest path
-    weight = travel_time
-  ) |>
-  activate("nodes")
-
-
-plot(unified_sf_network)
-# Update your distance calculation function to use the unified network
-calculate_multimodal_distance <- function(p1, p2, weight_type = "edge_length") {
-  calculate_network_distance(unified_transport_network, p1, p2) 
-}
-
-# Now recalculate distances using the comprehensive network
-city_port_combinations_unified <- tidyr::crossing(
-  city_row = 1:nrow(sf_cities),
-  port_row = 1:nrow(sf_port)
-) |>
-  left_join(sf_cities |> 
-              tibble::rowid_to_column("city_row") |> 
-              select(city_row, Ctnb, Ubclssz, Prvn, Pftn, Cont, city_geometry = geometry), 
-            by = "city_row") |>
-  left_join(sf_port |> 
-              tibble::rowid_to_column("port_row") |> 
-              select(port_row, nearest_port_name = chinese_name, port_geometry = geometry), 
-            by = "port_row") |>
-  rowwise() |>
-  filter(nearest_port_name %in% get_allowed_ports(Prvn)) |>
-  ungroup()
-
-# Calculate distances with unified network
-plan(multisession)
-
-calculated_distances_unified <- city_port_combinations_unified[1:2,] |>
-  mutate(
-    distance_results = future_pmap(
-      .l = list(city_geometry, port_geometry),  # Remove the .$ notation
-      .f = ~ calculate_network_distance(unified_transport_network_clean, ..1, ..2),  # Use clean network
-      .options = furrr_options(seed = TRUE)
-    )
-  ) |>
-  mutate(
-    p1_to_node = map_dbl(distance_results, ~ as.numeric(.$p1_to_node)),
-    node_to_node = map_dbl(distance_results, ~ as.numeric(.$node_to_node)),
-    node_to_p2 = map_dbl(distance_results, ~ as.numeric(.$node_to_p2)),
-    total_distance_km = p1_to_node + node_to_node + node_to_p2 
-  ) |>
-  select(-distance_results, -p1_to_node, -node_to_node, -node_to_p2)
-
-# Find shortest routes
-result_unified <- calculated_distances_unified |>
-  group_by(Ctnb, Ubclssz, Prvn, Pftn, Cont) |>
-  filter(total_distance_km == min(total_distance_km, na.rm = TRUE)) |>
-  distinct(Ctnb, Ubclssz, Prvn, Pftn, Cont, .keep_all = TRUE) |>
-  select(Ctnb, Ubclssz, Prvn, Pftn, Cont, min_total_distance_km = total_distance_km, nearest_port_name)
-
-print("Unified network calculation complete:")
-print(result_unified)
-
-
-## test calculate distance ------------------------------------------------
-# Longitude and Latitude - Cities -----------------------------------------------------------------
-
-
-
-
-location_city <- 
-  read_excel(here::here("data-raw/城市经纬度/城市经纬度.xlsx")) |> 
-  slice(-1) 
-
-# Convert Ltd and Latd columns to numeric type, which is required by st_as_sf
-location_city <- location_city %>%
-  mutate(
-    Ltd = as.numeric(Ltd),
-    Latd = as.numeric(Latd)
-  )
-
-# Filter to keep only city rows where Pftn (prefecture/city) is the same as Cont (county/district), 
-# effectively keeping only primary city records if needed.
-location_city <- location_city |> 
-  filter(Pftn == Cont) |> 
-  filter(!Prvn %in% c("海南", "西藏", "澳门", "香港", "台湾"))
-
-# Use st_as_sf() to generate an sf object
-# coords parameter specifies longitude and latitude columns
-# crs parameter sets the coordinate reference system to WGS84 (EPSG:4326)
-sf_cities <- st_as_sf(location_city, coords = c("Ltd", "Latd"), crs = 4326)
-
-# Print the generated sf object
-print("City Data Overview:")
-print(sf_cities)
-# Longitude and Latitude - Ports -----------------------------------------------------------------
-
-
-
-location_port <- 
-  read_csv(here::here("data/all_ports_data.csv")) %>%
-  mutate(
-    longitude = as.numeric(longitude),
-    latitude = as.numeric(latitude)
-  ) 
-
-# Define export port list
-export_port <- c("大连", "营口", "秦皇岛",
-                "天津", "烟台", "青岛", "日照", "上海", "连云港", 
-                "宁波", "舟山", "福州", "泉州", "厦门", 
-                "深圳", "广州", "湛江")
-
-# Construct regular expression to match if region contains any port name from export_port (not exact match)
-# Use paste(..., collapse = "|") to join port names with "|" for "OR" logic
-# iconv(..., to = "UTF-8") ensures correct character encoding handling, avoiding Chinese garbled characters
-# fixed = TRUE if port names contain regex special characters, needs to be set to TRUE
-export_port_pattern <- paste(export_port, collapse = "|")
-export_port_pattern <- iconv(export_port_pattern, to = "UTF-8") # Ensure correct encoding
-
-# Filter location_port, keep only rows where region contains port names from export_port
-# Note: Here it is assumed you want to create sf_port after filtering
-location_port_filtered <- location_port %>%
-  filter(grepl(export_port_pattern, region, ignore.case = TRUE)) %>% # ignore.case = TRUE ignores case
-  filter(main_port) # Continue filtering for main ports; remove this line if not needed
-
-# Use the filtered data to create sf_port object
-sf_port <- st_as_sf(location_port_filtered, coords = c("longitude", "latitude"), crs = 4326)
-
-print("Filtered Port Data Overview:")
-print(sf_port)
-
+# parameters -------------------------------------------------------------
 
 # Define heuristic mapping between provinces and ports (for optimization)
 # This mapping table aims to reduce computation by initially judging which ports might be associated with specific provinces.
@@ -375,6 +95,205 @@ province_port_heuristic_map <- list(
   "澳门" = c("广州", "深圳", "湛江")
 )
 
+# import data ------------------------------------------------------------
+
+## prefecture level area `POLYGON` or `MULTIPOLYGON`
+load("data/merged_sf_city.Rdata")
+
+## Longitude and Latitude - Cities -----------------------------------------------------------------
+
+location_city <- 
+  read_excel(here::here("data-raw/城市经纬度/城市经纬度.xlsx")) |> 
+  slice(-1) 
+
+# Convert Ltd and Latd columns to numeric type, which is required by st_as_sf
+location_city <- location_city %>%
+  mutate(
+    Ltd = as.numeric(Ltd),
+    Latd = as.numeric(Latd)
+  )
+
+# Filter to keep only city rows where Pftn (prefecture/city) is the same as Cont (county/district), 
+# effectively keeping only primary city records if needed.
+location_city <- location_city |> 
+  filter(Pftn == Cont) |> 
+  filter(!Prvn %in% c("海南", "西藏", "澳门", "香港", "台湾"))
+
+# Use st_as_sf() to generate an sf object
+# coords parameter specifies longitude and latitude columns
+# crs parameter sets the coordinate reference system to WGS84 (EPSG:4326)
+sf_cities <- st_as_sf(location_city, coords = c("Ltd", "Latd"), crs = 4326)
+
+# Print the generated sf object
+print("City Data Overview:")
+print(sf_cities)
+
+## Longitude and Latitude - Ports -----------------------------------------------------------------
+
+location_port <- 
+  read_csv(here::here("data/all_ports_data.csv")) %>%
+  mutate(
+    longitude = as.numeric(longitude),
+    latitude = as.numeric(latitude)
+  ) 
+
+# Define export port list
+export_port <- c("大连", "营口", "秦皇岛",
+                "天津", "烟台", "青岛", "日照", "上海", "连云港", 
+                "宁波", "舟山", "福州", "泉州", "厦门", 
+                "深圳", "广州", "湛江")
+
+# Construct regular expression to match if region contains any port name from export_port (not exact match)
+# Use paste(..., collapse = "|") to join port names with "|" for "OR" logic
+# iconv(..., to = "UTF-8") ensures correct character encoding handling, avoiding Chinese garbled characters
+# fixed = TRUE if port names contain regex special characters, needs to be set to TRUE
+export_port_pattern <- paste(export_port, collapse = "|")
+export_port_pattern <- iconv(export_port_pattern, to = "UTF-8") # Ensure correct encoding
+
+# Filter location_port, keep only rows where region contains port names from export_port
+# Note: Here it is assumed you want to create sf_port after filtering
+location_port_filtered <- location_port %>%
+  filter(grepl(export_port_pattern, region, ignore.case = TRUE)) %>% # ignore.case = TRUE ignores case
+  filter(main_port) # Continue filtering for main ports; remove this line if not needed
+
+# Use the filtered data to create sf_port object
+sf_port <- st_as_sf(location_port_filtered, coords = c("longitude", "latitude"), crs = 4326)
+
+print("Filtered Port Data Overview:")
+print(sf_port)
+
+
+## maps in different type ------------------------------------------------
+
+# Read the new 2000 map files (with provincial roads)
+shapefile_paths_new <- here::here("data-raw/2000-map", c("hiway.shp", "rail.shp", "gd.shp", "sd.shp"))
+
+# Read all four transportation network types
+highway_map_new <- st_read(shapefile_paths_new[1]) |> mutate(type = "高速公路")
+railway_map_new <- st_read(shapefile_paths_new[2]) |> mutate(type = "铁路") 
+national_road_map <- st_read(shapefile_paths_new[3]) |> mutate(type = "国道")
+provincial_road_map <- st_read(shapefile_paths_new[4]) |> mutate(type = "省道")
+
+# Read water way network types
+waterway_map <- st_read(here("data-raw/2020-Waterway/Waterwaysingleline.shp"))
+
+
+# Standardize column names across all datasets
+# First inspect what columns each dataset has
+cat("--- Highway columns: --- \n", names(highway_map_new))
+cat("--- Railway columns: --- \n", names(railway_map_new))
+cat("--- National road columns: --- \n", names(national_road_map))
+cat("--- Provincial road columns: --- \n", names(provincial_road_map))
+
+
+unified_railway_highway <- 
+  create_bimodal_network(
+    map1 = railway_map_new,
+    map2 = highway_map_new,
+    mode1_name = "railway",
+    mode2_name = "highway",
+    cities_sf = merged_sf_city,
+    max_transfer_distance = 100000
+  )
+
+
+unified_railway_highway <- 
+  create_bimodal_network(
+    map1 = railway_map_new,
+    map2 = waterway_map,
+    mode1_name = "railway",
+    mode2_name = "waterway",
+    cities_sf = merged_sf_city,
+    max_transfer_distance = 100000
+  )
+
+
+## Traffic Data (2000 Railway, Highway, National Road Maps) ---------------------------------------------------
+
+
+# Set the directory path containing the Shapefile files
+# Please adjust the path according to your actual project structure
+shapefile_dir <- "data-raw/2000年道路交通图"
+
+# Define the main Shapefile file names (usually .shp files)
+# Assuming main file names are '铁路_polyline.shp', '高速_polyline.shp', '国道_polyline.shp'
+shapefile_names <- c("铁路_polyline.shp", "高速_polyline.shp", "国道_polyline.shp")
+
+# Build the full Shapefile file paths
+full_shapefile_paths <- here::here(shapefile_dir, shapefile_names)
+
+# Check if files exist
+if (!all(file.exists(full_shapefile_paths))) {
+  stop(paste("Error: One or more Shapefile files not found. Please ensure all .shp files and their accompanying files (.dbf, .shx, etc.) are located in the specified directory.", 
+             "\nMissing files:", paste(full_shapefile_paths[!file.exists(full_shapefile_paths)], collapse = ", ")))
+}
+
+# Resolve Chinese garbled characters in Shapefile: Set SHAPE_ENCODING environment variable before reading
+# For Chinese Shapefiles, common encodings are GBK or GB2312
+Sys.setenv("SHAPE_ENCODING" = "GBK") 
+
+# Read individual Shapefile files
+# st_read() automatically identifies accompanying files like .dbf, .shx in the same directory
+railway_map_2000 <- st_read(full_shapefile_paths[[1]]) |> mutate(type = "铁路")
+
+highway_map_2000 <- st_read(full_shapefile_paths[[2]]) |> mutate(type = "高速")
+
+nationroad_map_2000 <- st_read(full_shapefile_paths[[3]]) |> mutate(type = "国道")
+
+
+# Ensure all maps have consistent columns before combining. 
+# We'll select common columns and geometry, and let sf handle the binding.
+# Adjust column selection based on your specific needs; here, 'NAME', 'CODE', 'type', and geometry are common.
+common_cols <- c("NAME", "CODE", "type") # Assuming NAME and CODE are present or can be made consistent
+
+# Select and rename columns if necessary for each map
+# For `nationroad_map_2000`, if 'QUES' column is not needed, it will be dropped by select.
+railway_map_2000_processed <- railway_map_2000 %>% select(all_of(common_cols), geometry)
+highway_map_2000_processed <- highway_map_2000 %>% select(all_of(common_cols), geometry)
+nationroad_map_2000_processed <- nationroad_map_2000 %>% select(all_of(common_cols), geometry)
+
+
+# Combine all three traffic maps into a single sf object
+# st_crs(railway_map_2000) will be used as the CRS for the combined map.
+# It's crucial that all input layers have the same CRS or are transformed to a common one beforehand if different.
+traffic_map_2000 <- rbind(railway_map_2000_processed, highway_map_2000_processed)
+# Round coordinates of traffic_map_2000 to 5 decimal places to improve network connectivity
+# This helps in snapping slightly misaligned endpoints to common nodes
+# st_geometry(traffic_map_2000) <- st_geometry(traffic_map_2000) %>%
+#   lapply(function(x) round(x, 1)) %>% # Round to 5 decimal places (adjust as needed)
+#   st_sfc(crs = st_crs(traffic_map_2000))
+
+st_geometry(highway_map_2000_processed) <- st_geometry(highway_map_2000_processed) %>%
+  lapply(function(x) round(x, 2)) %>% # Round to 5 decimal places (adjust as needed)
+  st_sfc(crs = st_crs(highway_map_2000_processed))
+
+
+sf_network <- as_sfnetwork(traffic_map_2000, directed = FALSE) %>%
+      activate("edges") %>%
+      mutate(edge_length = st_length(geometry))
+
+# Print data overview
+print("Combined Railway Map Overview:")
+print(head(railway_map_2000))
+
+print("Combined Highway Map Overview:")
+print(head(highway_map_2000))
+
+print("Combined National Road Map Overview:")
+print(head(nationroad_map_2000))
+
+print("Combined Traffic Map (traffic_map_2000) Overview:")
+print(head(traffic_map_2000))
+
+
+# Print CRS information for the combined data
+print("CRS information for the combined traffic map (traffic_map_2000):")
+print(st_crs(traffic_map_2000))
+
+
+
+# generate city-port combinations ----------------------------------------
+
 
 #' Helper function: Get allowed port list based on province name
 #' @param province_name Province name (character)
@@ -426,7 +345,7 @@ calculated_distances <- city_port_combinations %>%
   mutate(
     distance_results = future_pmap(
       .l = list(.$city_geometry, .$port_geometry), # Pass the columns to iterate over
-      .f = ~ calculate_network_distance(railway_map_2000_processed, ..1, ..2), # Define the function to apply and its arguments
+      .f = ~ calculate_network_distance(railway_map_new, ..1, ..2), # Define the function to apply and its arguments
       .options = furrr_options(seed = TRUE) # Ensure reproducibility if the function has random operations internally
     )
   ) %>%
@@ -456,92 +375,5 @@ result_df_vectorized <- calculated_distances %>%
 print("Calculation complete, results are as follows:")
 print(result_df_vectorized)
 
-# 4. clean cities without shortest path by railway
-
-remain_city <- result_df_vectorized |> filter(is.infinite(min_total_distance_km)) |> pull(Pftn)
-
-remain_city_port_combinations <- city_port_combinations |> 
-  filter(Pftn %in% remain_city)
-
-calculated_distances_by_highway <- remain_city_port_combinations %>% 
-  # filter(Pftn == "安庆") %>% # For testing, uncomment or delete if not needed
-  # Use future_pmap to apply calculate_network_distance function to each row in parallel
-  mutate(
-    distance_results = future_pmap(
-      .l = list(.$city_geometry, .$port_geometry), # Pass the columns to iterate over
-      .f = ~ calculate_network_distance(highway_map_2000_processed, ..1, ..2, path_type = "all_shortest"), # Define the function to apply and its arguments
-      .options = furrr_options(seed = TRUE) # Ensure reproducibility if the function has random operations internally
-    )
-  ) %>%
-  # Expand distance_results (a list-column where each element is a tibble) into new columns
-  # This requires manually extracting each component from the tibble
-  mutate(
-    p1_to_node = map_dbl(distance_results, ~ as.numeric(.$p1_to_node)),
-    node_to_node = map_dbl(distance_results, ~ as.numeric(.$node_to_node)),
-    node_to_p2 = map_dbl(distance_results, ~ as.numeric(.$node_to_p2)),
-    # Calculate total distance
-    total_distance_km = p1_to_node + node_to_node + node_to_p2 
-  ) %>%
-  # Clean up intermediate columns, keep only the required final results
-  select(-distance_results, -p1_to_node, -node_to_node, -node_to_p2)
-
-calculated_distances_by_highway |> skim(total_distance_km)
-
-merged_distance <- 
-inner_join(
-  result_df_vectorized,
-  all_cities_with_distance, join_by(Pftn == cityabbr)
-) |> 
-  mutate(distance_to_harbor = as.numeric(distance_to_harbor)) |> 
-  filter(!is.infinite(min_total_distance_km))
-
-merged_distance |> pull(min_total_distance_km)
-class(merged_distance$distance_to_harbor)
-max(merged_distance$min_total_distance_km)
-
-merged_distance |> ggplot(aes(x = distance_to_harbor, y = min_total_distance_km)) +
-  geom_point() +
-  scale_x_log10() +
-  scale_y_log10() +
-  geom_abline(slope = 1, intercept = 0)
-
-merged_distance |> filter(distance_to_harbor == 0) |> pull(min_total_distance_km)
-
-with(merged_distance, cor(distance_to_harbor, min_total_distance_km))
-
-result_df_vectorized |> filter(Pftn == "重庆")
 
 
-
-
-
-# Create the multimodal network
-multimodal_network <- create_multimodal_network(
-  highway_map_new, 
-  railway_map_new, 
-  national_road_map, 
-  provincial_road_map
-)
-
-print("Multimodal network created with transfer connections!")
-print(multimodal_network)
-
-# Update your distance calculation to use the multimodal network
-calculated_distances_multimodal <- city_port_combinations_unified[1:5,] |>
-  mutate(
-    distance_results = future_pmap(
-      .l = list(city_geometry, port_geometry),
-      .f = ~ calculate_network_distance(multimodal_network, ..1, ..2),
-      .options = furrr_options(seed = TRUE)
-    )
-  ) |>
-  mutate(
-    p1_to_node = map_dbl(distance_results, ~ as.numeric(.$p1_to_node)),
-    node_to_node = map_dbl(distance_results, ~ as.numeric(.$node_to_node)),
-    node_to_p2 = map_dbl(distance_results, ~ as.numeric(.$node_to_p2)),
-    total_distance_km = p1_to_node + node_to_node + node_to_p2 
-  ) |>
-  select(-distance_results, -p1_to_node, -node_to_node, -node_to_p2)
-
-print("Multimodal distance calculation:")
-print(calculated_distances_multimodal)

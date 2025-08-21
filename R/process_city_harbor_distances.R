@@ -370,3 +370,5 @@ write_excel_csv(all_cities_with_distance,
                 file = here("data", "all_cities_with_distance.csv"))
 
 message(paste0("Final processed data saved to: ", here("data", "all_cities_with_distance.csv"), "\n"))
+
+save(merged_sf_city, file = here("data/merged_sf_city.Rdata"))

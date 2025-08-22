@@ -121,7 +121,12 @@
 #'
 #' @export
 create_bimodal_network <- function(map1, map2, mode1_name, mode2_name, cities_sf, max_transfer_distance = 10000) {
-  
+  # Step 0: Check and convert CRS
+  map1 <- check_and_convert_crs(map1)
+
+  map2 <- check_and_convert_crs(map2)
+
+
   # Step 1: Clean and prepare the input maps
   map1_clean <- map1 |> 
     filter(!st_is_empty(geometry)) |>
@@ -237,4 +242,75 @@ create_bimodal_network <- function(map1, map2, mode1_name, mode2_name, cities_sf
       nrow(st_as_sf(bimodal_network, "edges")), "edges\n")
   
   return(bimodal_network)
+}
+
+#' Check and Convert SF Object to CGCS2000 (EPSG:4490)
+#'
+#' This function checks if a spatial (sf) object uses the Chinese Geodetic Coordinate System 2000
+#' (CGCS2000, EPSG:4490) and converts it if necessary. CGCS2000 is the official coordinate system 
+#' used in mainland China for mapping and spatial analysis.
+#'
+#' @param sf_object An sf (Simple Features) object whose coordinate reference system
+#'   should be checked and possibly converted to EPSG:4490.
+#'
+#' @return The same sf object, either with its original CRS if it was already EPSG:4490,
+#'   or transformed to EPSG:4490 if it had a different CRS.
+#'
+#' @details
+#' The function performs these steps:
+#' \enumerate{
+#'   \item Verifies the input is an sf object
+#'   \item Checks the current CRS of the sf object
+#'   \item If the CRS is already EPSG:4490, returns the original object
+#'   \item If the object has no CRS, sets it to EPSG:4490 without transformation
+#'   \item If the object has a different CRS, transforms it to EPSG:4490
+#' }
+#'
+#' The CGCS2000 (EPSG:4490) is a geodetic coordinate system widely used in
+#' China for mapping and spatial analysis. It replaced the older Beijing 1954 and
+#' Xi'an 1980 coordinate systems, and is officially used for all mapping activities
+#' in mainland China.
+#'
+#' @examples
+#' \dontrun{
+#' # Convert a single sf object
+#' railway_map_4490 <- check_and_convert_crs(railway_map)
+#'
+#' # Process multiple sf objects
+#' map_list <- list(railway_map, highway_map, national_road_map)
+#' map_list_4490 <- lapply(map_list, check_and_convert_crs)
+#'
+#' # Example with incorrect CRS
+#' shapefile_wgs84 <- st_read("data/roads_wgs84.shp")
+#' shapefile_cgcs <- check_and_convert_crs(shapefile_wgs84)
+#' }
+#'
+#' @export
+#' @importFrom sf st_crs st_transform st_set_crs
+check_and_convert_crs <- function(sf_object) {
+  # Check if the object is actually an sf object
+  if (!inherits(sf_object, "sf")) {
+    stop("输入对象不是sf类型")
+  }
+  
+  # Get current CRS
+  current_crs <- st_crs(sf_object)
+  target_crs <- st_crs(4490) # CGCS2000 (Chinese coordinate system)
+  
+  # Check if current CRS is already 4490
+  if (!is.na(current_crs) && current_crs == target_crs) {
+    message("对象已经使用CGCS2000坐标系统(EPSG:4490)")
+    return(sf_object)
+  } else {
+    # Show information about the transformation
+    if (is.na(current_crs)) {
+      message("对象没有坐标系统，设置为CGCS2000坐标系统(EPSG:4490)")
+      sf_object_4490 <- st_set_crs(sf_object, 4490)
+    } else {
+      message(paste0("转换坐标系统从", current_crs$input, "到CGCS2000坐标系统(EPSG:4490)"))
+      sf_object_4490 <- st_transform(sf_object, 4490)
+    }
+    
+    return(sf_object_4490)
+  }
 }
